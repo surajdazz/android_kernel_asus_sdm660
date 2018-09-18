@@ -966,7 +966,7 @@ int q6asm_unmap_rtac_block(uint32_t *mem_map_handle)
 			__func__, result2);
 		result = result2;
 	} else {
-		mem_map_handle = 0;
+		*mem_map_handle = 0;
 	}
 
 	result2 = q6asm_mmap_apr_dereg();
@@ -2190,8 +2190,11 @@ static int32_t q6asm_callback(struct apr_client_data *data, void *priv)
 		pr_debug("%s: ASM_STREAM_EVENT payload[0][0x%x] payload[1][0x%x]",
 				 __func__, payload[0], payload[1]);
 		i = is_adsp_raise_event(data->opcode);
-		if (i < 0)
+		if (i < 0) {
+			spin_unlock_irqrestore(
+				&(session[session_id].session_lock), flags);
 			return 0;
+		}
 
 		/* repack payload for asm_stream_pp_event
 		 * package is composed of event type + size + actual payload
@@ -2200,8 +2203,11 @@ static int32_t q6asm_callback(struct apr_client_data *data, void *priv)
 		pp_event_package = kzalloc(payload_size
 				+ sizeof(struct msm_adsp_event_data),
 				GFP_ATOMIC);
-		if (!pp_event_package)
+		if (!pp_event_package) {
+			spin_unlock_irqrestore(
+				&(session[session_id].session_lock), flags);
 			return -ENOMEM;
+		}
 
 		pp_event_package->event_type = i;
 		pp_event_package->payload_len = payload_size;
@@ -2210,6 +2216,8 @@ static int32_t q6asm_callback(struct apr_client_data *data, void *priv)
 		ac->cb(data->opcode, data->token,
 			(void *)pp_event_package, ac->priv);
 		kfree(pp_event_package);
+		spin_unlock_irqrestore(
+			&(session[session_id].session_lock), flags);
 		return 0;
 	case ASM_SESSION_CMDRSP_ADJUST_SESSION_CLOCK_V2:
 		pr_debug("%s: ASM_SESSION_CMDRSP_ADJUST_SESSION_CLOCK_V2 sesion %d status 0x%x msw %u lsw %u\n",
